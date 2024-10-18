@@ -7,9 +7,17 @@ import time
 logger = CustomFormatter.configure_logger("cloudflare_setup")
 
 
-def get_firewall_polcy(name_prefix: str):
+def get_block_lists(name_prefix: str):
 
     return cloudflare_api.get_lists(name_prefix)
+
+
+def get_gateway_policies(name_prefix: str):
+    """Gets blocking policies with defined name prefix in cloudflare_api."""
+
+    cf_policies = cloudflare_api.get_firewall_policies(name_prefix)
+
+    return cf_policies, len(cf_policies)
 
 
 def create_firewall_policy(
@@ -17,9 +25,7 @@ def create_firewall_policy(
 ):
     """Creates or updates a blocking policy in cloudflare_api."""
 
-    # Get existing policies
-    cf_policies = cloudflare_api.get_firewall_policies(name_prefix)
-    num_policies = len(cf_policies)
+    cf_policies, num_policies = get_gateway_policies(name_prefix)
 
     if "TLDs" in name_prefix:
         # Remove duplicates, sort, and create regex
@@ -40,25 +46,26 @@ def create_firewall_policy(
         logger.error("One or more than one firewall policy found")
         raise Exception("More than one firewall policy found")
 
-    return []
-
 
 def delete_firewall_policy(name_prefix: str):
-    """Deletes the blocking policy in cloudflare_api."""
+    """Deletes a blocking policy from Cloudflare."""
 
-    # Get existing policies
-    cf_policies = cloudflare_api.get_firewall_policies(name_prefix)
+    cf_policies, num_policies = get_gateway_policies(name_prefix)
 
-    if cf_policies:
-        cloudflare_api.delete_firewall_policy(name_prefix, cf_policies[0]["id"])
-    else:
+    if num_policies == 0:
         logger.info(f"No firewall policy {name_prefix} found to delete")
 
-    return []
+        return []
+    elif num_policies != 1:
+        logger.error("One or more than one firewall policy found")
+        raise Exception("More than one firewall policy found")
+
+    cloudflare_api.delete_firewall_policy(name_prefix, cf_policies[0]["id"])
 
 
 def delete_lists_policy(name_prefix: str, cf_lists: List[str]):
     """Deletes the blocking policy and then the lists in cloudflare_api."""
+
     delete_firewall_policy(name_prefix)
 
     for l in cf_lists:
@@ -66,8 +73,6 @@ def delete_lists_policy(name_prefix: str, cf_lists: List[str]):
 
         # Sleep to prevent rate limit
         time.sleep(1)
-
-    return []
 
 
 def create_lists_policy(name_prefix: str, unique_domains: List[str]):
@@ -91,11 +96,7 @@ def create_lists_policy(name_prefix: str, unique_domains: List[str]):
 
     create_firewall_policy(name_prefix, [l["id"] for l in cf_lists])
 
-    return []
-
 
 def chunk_list(_list: List[str], n: int):
     for i in range(0, len(_list), n):
         yield _list[i : i + n]
-
-    return []
